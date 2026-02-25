@@ -10,7 +10,8 @@
 
 # Specify the name of the executable file, without ".exe"
 NAME		= fbneosdl
-EXE		= $(NAME)
+OUTDIR		= build
+EXE		= $(OUTDIR)/$(NAME)
 INSTALLDIR	= /usr/local/games/fba/
 ROMDIR		= /usr/local/share/roms/
 BINDIR		= /usr/local/bin/
@@ -52,12 +53,13 @@ endif
 #	Specify paths/files
 #
 
-objdir	= obj/GNU_SDL/$(NAME)/
+objdir	= $(OUTDIR)/obj/GNU_SDL/$(NAME)/
 srcdir	= src/
 
 alldir	= burn \
 		burn/devices \
 		burn/drv \
+		burn/drv/atari \
 		burn/drv/capcom \
 		burn/drv/cave \
 		burn/drv/coleco \
@@ -68,6 +70,8 @@ alldir	= burn \
 		burn/drv/konami \
 		burn/drv/megadrive \
 		burn/drv/midway \
+		burn/drv/msx \
+		burn/drv/nes \
 		burn/drv/pce \
 		burn/drv/neogeo \
 		burn/drv/pce \
@@ -79,6 +83,7 @@ alldir	= burn \
 		burn/drv/sg1000 \
 		burn/drv/sms \
 		burn/drv/snes \
+		burn/drv/spectrum \
 		burn/drv/taito \
 		burn/drv/toaplan \
 		burn/snd \
@@ -102,6 +107,7 @@ alldir	= burn \
 		cpu/cz80 \
 		cpu/h6280 \
 		cpu/hd6309 \
+		cpu/i8051 \
 		cpu/i8039 \
 		cpu/konami \
 		cpu/m68k \
@@ -114,6 +120,8 @@ alldir	= burn \
 		cpu/s2650 \
 		cpu/sh2 \
 		cpu/tlcs90 \
+		cpu/upd7810 \
+		cpu/z180 \
 		cpu/z80 \
 		dep/kaillera/client \
 		dep/libs/lib7z \
@@ -128,6 +136,8 @@ incdir	= $(foreach dir,$(alldir),-I$(srcdir)$(dir)) -I$(objdir)dep/generated -I/
 
 ifeq ($(OS),Windows_NT)
 lib	= -static -lstdc++ -lpng -lmingw32 -Wl,-Bdynamic -lSDL -lz -lopengl32 -lglu32
+else ifeq ($(shell uname -s),Darwin)
+lib	= $(shell pkg-config --libs sdl2 2>/dev/null) -lz -framework OpenGL
 else
 lib	= -lstdc++ -lSDL -lGL -lGLU -lz
 endif
@@ -171,14 +181,14 @@ drvobj	+= \
 		d_minivdr.o d_othunder.o d_retofinv.o d_slapshot.o d_superchs.o d_taitob.o d_taitof2.o d_taitomisc.o d_taitox.o d_taitoz.o \
 		d_tnzs.o d_wyvernf0.o \
 		\
-		d_batrider.o d_batsugun.o d_battleg.o d_bbakraid.o d_demonwld.o d_dogyuun.o d_fixeight.o d_ghox.o d_hellfire.o \
-		d_kbash.o d_kbash2.o d_mahoudai.o d_outzone.o d_pipibibs.o d_rallybik.o d_samesame.o d_shippumd.o d_slapfght.o \
-		d_snowbro2.o d_tekipaki.o d_truxton.o d_truxton2.o d_vfive.o d_vimana.o d_zerowing.o \
+		d_batrider.o d_batsugun.o d_battleg.o d_bbakraid.o d_dogyuun.o d_fixeight.o d_ghox.o \
+		d_kbash.o d_kbash2.o d_mahoudai.o d_pipibibs.o d_shippumd.o d_slapfght.o \
+		d_snowbro2.o d_tekipaki.o d_truxton2.o d_vfive.o \
 		\
 		d_4enraya.o d_1942.o d_1943.o d_alinvade.o d_alpha68k.o d_ambush.o d_arabian.o d_armedf.o d_atetris.o d_aztarac.o d_baraduke.o \
 		d_bionicc.o d_blktiger.o d_blockout.o d_blueprnt.o d_bombjack.o d_capbowl.o d_commando.o d_cybertnk.o d_ddragon.o d_djboy.o d_dkong.o \
 		d_dynduke.o d_epos.o d_exedexes.o d_funkybee.o d_galaga.o d_gauntlet.o d_ginganin.o d_gng.o d_gunsmoke.o d_higemaru.o \
-		d_ikki.o d_invaders.o d_jack.o d_kangaroo.o d_kncljoe.o d_kyugo.o d_ladybug.o d_lwings.o d_lastduel.o d_mario.o d_markham.o \
+		d_invaders.o d_jack.o d_kangaroo.o d_kncljoe.o d_kyugo.o d_ladybug.o d_lwings.o d_lastduel.o d_mario.o d_markham.o \
 		d_marineb.o d_megasys1.o d_meijinsn.o d_mitchell.o d_mole.o d_momoko.o d_mrdo.o d_mrflea.o d_mustache.o d_mystston.o d_ninjakd2.o \
 		d_pacland.o d_pacman.o d_pac2650.o d_pkunwar.o d_prehisle.o d_punchout.o d_psychic5.o d_quizo.o d_rallyx.o d_renegade.o d_rpunch.o \
 		d_route16.o d_scregg.o d_sf.o d_sidearms.o d_skyarmy.o d_skyfox.o d_skykid.o d_snk68.o d_solomon.o d_sonson.o d_srumbler.o d_suna8.o d_tail2nose.o \
@@ -207,19 +217,19 @@ drvobj	+= \
 		\
 		d_sg1000.o
 
-depobj	+= \
-		bzip.o config.o drv.o inpdipsw.o main.o media.o run.o stated.o \
+	depobj	+= \
+		bzip.o config.o drv.o dynhuff.o inpdipsw.o input_sdl2.o main.o media.o run.o stated.o \
 		stringset.o ips_manager.o support_paths.o scrn.o \
 		\
 		ioapi.o unzip.o conc.o cong.o dat.o gamc.o gami.o image.o \
-		misc.o sshot.o state.o statec.o zipfn.o \
+		misc.o net_stubs.o replay.o lua_stubs.o sshot.o state.o statec.o zipfn.o \
 		\
-		aud_sdl.o inp_sdl.o vid_sdlfx.o vid_sdlopengl.o \
+		aud_sdl.o inp_sdl2.o sdl2_gui.o sdl2_gui_common.o sdl2_gui_ingame.o sdl2_inprint.o vid_sdl2opengl.o \
 		\
 		aud_dsp.o aud_interface.o  inp_interface.o interface.o \
 		lowpass2.o vid_interface.o vid_softfx.o vid_support.o \
 		\
-		cd_interface.o cd_isowav.o cdsound.o neocdlist.o \
+		cd_interface.o cd_sdl2.o cdsound.o neocdlist.o \
 		\
 		2xpm.o 2xsai.o ddt3x.o epx.o hq2xs.o hq2xs_16.o xbr.o \
 		\
@@ -232,21 +242,21 @@ depobj	+= \
 		$(drvobj) \
 		\
 		burn.o burn_gun.o burn_led.o burn_memory.o burn_sound.o burn_sound_c.o cheat.o debug_track.o hiscore.o load.o \
-		tiles_generic.o timer.o vector.o \
+		burn_bitmap.o burn_pal.o burn_shift.o tilemap_generic.o tiles_generic.o timer.o vector.o \
 		\
-		8255ppi.o 8257dma.o eeprom.o nmk004.o kaneko_tmap.o pandora.o seibusnd.o sknsspr.o slapstic.o t5182.o timekpr.o tms34061.o \
+		8255ppi.o 8257dma.o atariic.o atarimo.o earom.o eeprom.o gaelco_crypt.o joyprocess.o mermaid.o nb1414m4.o nb1414m4_8bit.o nmk004.o nmk112.o kaneko_tmap.o pandora.o resnet.o seibusnd.o sega_315_5195.o sknsspr.o slapstic.o t5182.o timekpr.o tms34061.o watchdog.o \
 		v3021.o vdc.o tms9928a.o \
 		\
-		ay8910.o burn_y8950.o burn_ym2151.o burn_ym2203.o burn_ym2413.o burn_ym2608.o burn_ym2610.o burn_ym2612.o \
+		ay8910.o burn_md2612.o burn_y8950.o burn_ym2151.o burn_ym2203.o burn_ym2413.o burn_ym2608.o burn_ym2610.o burn_ym2612.o burn_ymf262.o \
 		burn_ym3526.o burn_ym3812.o burn_ymf278b.o c6280.o dac.o es5506.o es8712.o flt_rc.o fm.o fmopl.o ics2115.o iremga20.o \
-		k005289.o k007232.o k051649.o k053260.o k054539.o msm5205.o msm5232.o msm6295.o namco_snd.o nes_apu.o rf5c68.o saa1099.o \
-		samples.o segapcm.o sn76496.o upd7759.o vlm5030.o x1010.o ym2151.o ym2413.o ymdeltat.o ymf278b.o ymz280b.o \
+		k005289.o k007232.o k051649.o k053260.o k054539.o msm5205.o msm5232.o msm6295.o namco_snd.o nes_apu.o pokey.o rf5c68.o saa1099.o \
+		mb87078.o samples.o segapcm.o sn76477.o sn76496.o tms5220.o upd7759.o vlm5030.o x1010.o ym2151.o ym2413.o ym2612.o ymdeltat.o ymf262.o ymf278b.o ymz280b.o \
 		\
 		arm7_intf.o arm_intf.o h6280_intf.o hd6309_intf.o konami_intf.o m6502_intf.o m6800_intf.o m6805_intf.o m6809_intf.o \
-		m68000_intf.o nec_intf.o pic16c5x_intf.o s2650_intf.o tlcs90_intf.o z80_intf.o \
+		m68000_intf.o nec_intf.o pic16c5x_intf.o s2650_intf.o tlcs90_intf.o z180_intf.o z80_intf.o z80ctc.o z80pio.o \
 		\
-		arm.o arm7.o h6280.o hd6309.o i8039.o konami.o m6502.o m6800.o m6805.o m6809.o nec.o pic16c5x.o s2650.o sh2.o tlcs90.o \
-		v25.o z80.o z80daisy.o \
+		arm.o arm7.o h6280.o hd6309.o i8039.o mcs51.o konami.o m6502.o m6800.o m6805.o m6809.o nec.o pic16c5x.o s2650.o sh2.o tlcs90.o upd7810.o \
+		v25.o z180.o z80.o z80daisy.o \
 		\
 		cave.o cave_palette.o cave_sprite.o cave_tile.o \
 		\
@@ -255,14 +265,14 @@ depobj	+= \
 		\
 		cps3run.o cps3snd.o \
 		\
-		deco16ic.o \
+		deco16ic.o deco146.o \
 		\
 		gal_gfx.o gal_run.o gal_sound.o gal_stars.o \
 		\
-		irem_cpu.o \
+		irem_cpu.o irem_sound.o \
 		\
 		k007342_k007420.o k051316.o k051733.o k051960.o k052109.o k053245.o k053247.o k053250.o k053251.o k053936.o k054000.o \
-		k054338.o k055555.o k056832.o konamigx.o konamiic.o timeplt_snd.o \
+		k007121.o k054338.o k055555.o k056832.o konamigx.o konamiic.o timeplt_snd.o \
 		\
 		neo_decrypt.o neo_palette.o neo_run.o neo_sprite.o neo_text.o neo_upd4990a.o neogeo.o \
 		\
@@ -272,12 +282,12 @@ depobj	+= \
 		\
 		fd1089.o fd1094.o genesis_vid.o mc8123.o sys16_fd1094.o sys16_gfx.o sys16_run.o \
 		\
-		cchip.o pc080sn.o pc090oj.o taito.o taito_ic.o taito_m68705.o tc0100scn.o tc0110pcr.o tc0140syt.o tc0150rod.o \
+		cchip.o pc080sn.o pc090oj.o taito.o taito_ic.o taito_m68705.o taitof3_snd.o tc0100scn.o tc0110pcr.o tc0140syt.o tc0150rod.o \
 		tc0180vcu.o tc0220ioc.o tc0280grd.o tc0360pri.o tc0480scp.o tc0510nio.o tc0640fio.o tnzs_prot.o \
 		\
 		toa_bcu2.o toa_extratext.o toa_gp9001.o toa_palette.o toaplan1.o toaplan.o \
 		\
-		megadrive.o \
+		mdeeprom.o megadrive.o stm95.o \
 		\
 		pce.o \
 		\
@@ -345,7 +355,7 @@ AS	= nasm
 HOSTCFLAGS = $(incdir)
 CFLAGS = -O2 -fomit-frame-pointer -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
 CXXFLAGS = -O2 -fomit-frame-pointer -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
-DEF := -DCPUTYPE=$(CPUTYPE) -DUSE_SPEEDHACKS -DBUILD_SDL
+DEF := -DCPUTYPE=$(CPUTYPE) -DUSE_SPEEDHACKS -DBUILD_SDL2
 
 CFLAGS += -U__cdecl -U__fastcall -D__cdecl="" -D__fastcall=""
 CXXFLAGS += -U__cdecl -U__fastcall -D__cdecl="" -D__fastcall=""
@@ -377,6 +387,18 @@ endif
 
 CFLAGS += $(DEF) $(incdir)
 CXXFLAGS += $(DEF) $(incdir)
+ifeq ($(shell uname -s),Darwin)
+CFLAGS += $(shell pkg-config --cflags sdl2 2>/dev/null)
+CXXFLAGS += $(shell pkg-config --cflags sdl2 2>/dev/null)
+CFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
+CXXFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
+CFLAGS += -DBOOL=int -DTRUE=1 -DFALSE=0
+CXXFLAGS += -DBOOL=int -DTRUE=1 -DFALSE=0
+CFLAGS += -DPNG_ARM_NEON=0
+CXXFLAGS += -DPNG_ARM_NEON=0
+CFLAGS += -DPNG_ARM_NEON_OPT=0
+CXXFLAGS += -DPNG_ARM_NEON_OPT=0
+endif
 ifndef DEBUG
 LDFLAGS += -s
 endif
@@ -424,7 +446,7 @@ all:	init $(autobj)
 endif
 else
 
-all:	$(NAME)
+all:	$(EXE)
 
 endif
 
@@ -436,9 +458,9 @@ endif
 
 ifeq ($(MAKELEVEL),2)
 
-$(NAME):	$(allobj)
+$(EXE):	$(allobj)
 	@echo
-	@echo Linking executable $(NAME)...
+	@echo Linking executable $(EXE)...
 	@$(LD) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(lib)
 
 ifdef	DEBUG
@@ -542,7 +564,7 @@ $(ctv.h):	ctv_make.cpp
 toa_bcu2.d toa_bcu2.o toa_gp9001.d toa_gp9001.o: $(toa_gp9001_func.h)
 
 $(toa_gp9001_func.h):	$(srcdir)dep/scripts/toa_gp9001_func.pl
-	@$(srcdir)dep/scripts/toa_gp9001_func.pl -o $(toa_gp9001_func.h)
+	@perl $(srcdir)dep/scripts/toa_gp9001_func.pl -o $(toa_gp9001_func.h)
 
 #
 #	Extra rules for generated header file neo_sprite_func.h, needed by neo_sprite.cpp
@@ -551,7 +573,7 @@ $(toa_gp9001_func.h):	$(srcdir)dep/scripts/toa_gp9001_func.pl
 neo_sprite.d neo_sprite.o: $(neo_sprite_func.h)
 
 $(neo_sprite_func.h):	$(srcdir)dep/scripts/neo_sprite_func.pl
-	@$(srcdir)dep/scripts/neo_sprite_func.pl -o $(neo_sprite_func.h)
+	@perl $(srcdir)dep/scripts/neo_sprite_func.pl -o $(neo_sprite_func.h)
 
 #
 #	Extra rules for generated header file cave_tile_func.h, needed by cave_tile.cpp
@@ -679,6 +701,7 @@ else
 endif
 	@echo
 	@mkdir -p $(foreach dir, $(alldir),$(objdir)$(dir))
+	@mkdir -p $(OUTDIR)
 	@mkdir -p $(srcdir)dep/generated
 
 cleandep:
@@ -689,13 +712,13 @@ touch:
 	@echo Marking all targets for $(NAME) as uptodate...
 	@for dir in $(alldir); do touch -c $(objdir)$$dir/*; done
 	@do touch -c $(srcdir)/generated/*
-	@touch $(NAME).exe
+	@touch $(EXE)
 install:
 	mkdir -p $(INSTALLDIR)
 	mkdir -p $(ROMDIR)
-	cp $(EXE) $(INSTALLDIR)
+	cp $(EXE) $(INSTALLDIR)$(NAME)
 	cp $(FILES) $(INSTALLDIR)
-	ln -fs $(INSTALLDIR)$(EXE) $(BINDIR)$(EXE)
+	ln -fs $(INSTALLDIR)$(NAME) $(BINDIR)$(NAME)
 
 clean:
 	@echo Removing all files from $(objdir)...

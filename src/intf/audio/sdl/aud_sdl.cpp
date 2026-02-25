@@ -64,7 +64,7 @@ static int SDLSoundBlankSound()
 	return 0;
 }
 
-#define WRAP_INC(x) { x++; if (x >= nAudSegCount) x = 0; }
+#define WRAP_INC(x) { x++; if (x >= nAudSegCount[0]) x = 0; }
 
 static int SDLSoundCheck()
 {
@@ -76,13 +76,13 @@ static int SDLSoundCheck()
 	// Since the SDL buffer is smaller than a segment, only fill the buffer up to the start of the currently playing segment
 	nPlaySeg = nSDLPlayPos / (nAudSegLen << 2) - 1;
 
-	if (nPlaySeg >= nAudSegCount)
+	if (nPlaySeg >= nAudSegCount[0])
 	{
-		nPlaySeg -= nAudSegCount;
+		nPlaySeg -= nAudSegCount[0];
 	}
 	if (nPlaySeg < 0)
 	{
-		nPlaySeg = nAudSegCount - 1;
+		nPlaySeg = nAudSegCount[0] - 1;
 	}
 
 	if (nSDLFillSeg == nPlaySeg) {
@@ -129,7 +129,7 @@ static int SDLSoundExit()
 	return 0;
 }
 
-static int SDLSetCallback(int (*pCallback)(int))
+INT32 AudSDLSetCallback(INT32 (*pCallback)(INT32))
 {
 	if (pCallback == NULL)
 	{
@@ -140,6 +140,11 @@ static int SDLSetCallback(int (*pCallback)(int))
 		GetNextSound = pCallback;
 	}
 	return 0;
+}
+
+static INT32 SDLSoundFrame()
+{
+	return SDLSoundCheck();
 }
 
 static int SDLSoundInit()
@@ -156,7 +161,7 @@ static int SDLSoundInit()
 
 	nSoundFps = nAppVirtualFps;
 	nAudSegLen = (nAudSampleRate[0] * 100 + (nSoundFps >> 1)) / nSoundFps;
-	nAudLoopLen = (nAudSegLen * nAudSegCount) << 2;
+	nAudLoopLen = (nAudSegLen * nAudSegCount[0]) << 2;
 	for (nSDLBufferSize = 64; nSDLBufferSize < (nAudSegLen >> 1); nSDLBufferSize <<= 1)
 	{
 
@@ -185,7 +190,7 @@ static int SDLSoundInit()
 	}
 
 	nSDLPlayPos = 0;
-	nSDLFillSeg = nAudSegCount - 1;
+	nSDLFillSeg = nAudSegCount[0] - 1;
 
 	if (SDL_OpenAudio(&audiospec_req, &audiospec))
 	{
@@ -193,7 +198,7 @@ static int SDLSoundInit()
 		return 1;
 	}
 	DspInit();
-	SDLSetCallback(NULL);
+	AudSDLSetCallback(NULL);
 
 	return 0;
 }
@@ -224,4 +229,4 @@ static int SDLGetSettings(InterfaceInfo* /* pInfo */)
 	return 0;
 }
 
-struct AudOut AudOutSDL = { SDLSoundBlankSound, SDLSoundCheck, SDLSoundInit, SDLSetCallback, SDLSoundPlay, SDLSoundStop, SDLSoundExit, SDLSoundSetVolume, SDLGetSettings, _T("SDL audio output") };
+struct AudOut AudOutSDL = { SDLSoundBlankSound, SDLSoundInit, SDLSoundExit, SDLSoundCheck, SDLSoundFrame, SDLSoundPlay, SDLSoundStop, SDLSoundSetVolume, SDLGetSettings, _T("SDL audio output") };

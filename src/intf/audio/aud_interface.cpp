@@ -211,6 +211,17 @@ INT32 AudSelect(UINT32 nPlugIn)
 	return 1;
 }
 
+INT32 AudSetCallback(INT32 (*pCallback)(INT32))
+{
+#if defined (BUILD_SDL2)
+	extern INT32 AudSDLSetCallback(INT32 (*pCallback)(INT32));
+	return AudSDLSetCallback(pCallback);
+#else
+	(void)pCallback;
+	return 1;
+#endif
+}
+
 void AudWriteSilence()
 {
 	if (nAudNextSound && nAudAllocSegLen) {

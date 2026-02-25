@@ -17,7 +17,6 @@
 #elif defined (BUILD_PI)
 	extern struct VidOut VidOutPi;
 #elif defined (BUILD_SDL2)
-	extern struct VidOut VidOutSDL2;
 	extern struct VidOut VidOutSDL2Opengl;
 #elif defined (BUILD_SDL)
 	extern struct VidOut VidOutSDLOpenGL;
@@ -40,7 +39,6 @@ static struct VidOut *pVidOut[] = {
 #elif defined (BUILD_PI)
 	&VidOutPi,
 #elif defined (BUILD_SDL2)
-	&VidOutSDL2,
 	&VidOutSDL2Opengl,
 #elif defined (BUILD_SDL)
 	&VidOutSDLOpenGL,

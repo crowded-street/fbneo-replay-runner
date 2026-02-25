@@ -98,6 +98,13 @@ extern INT32 nFireButtons;
 
 extern bool bStreetFighterLayout;
 extern bool bLeftAltkeyMapped;
+extern bool bFixDiagonals;
+extern int nEnableSOCD;
+
+extern int kNetVersion;
+extern int kNetGame;
+extern int kNetSpectator;
+extern int kNetLua;
 
 INT32 GameInpInit();
 INT32 GameInpExit();

@@ -100,7 +100,27 @@ int parseSwitches(int argc, char* argv[])
 		}
 		if (strcmp(argv[i] + 1, "cd") == 0)
 		{
+			if ((i + 1) >= argc) {
+				printf("Missing value for -cd\n");
+				return 1;
+			}
 			_tcscpy(CDEmuImage, argv[i + 1]);
+		}
+		if (strcmp(argv[i] + 1, "replay-state") == 0)
+		{
+			if ((i + 1) >= argc) {
+				printf("Missing value for -replay-state\n");
+				return 1;
+			}
+			ReplaySetStatePath(argv[i + 1]);
+		}
+		if (strcmp(argv[i] + 1, "replay-inputs") == 0)
+		{
+			if ((i + 1) >= argc) {
+				printf("Missing value for -replay-inputs\n");
+				return 1;
+			}
+			ReplaySetInputsPath(argv[i + 1]);
 		}
 	}
 	return 0;
@@ -291,20 +311,36 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	if (parseSwitches(argc, argv) != 0) {
+		return 1;
+	}
+
 	for (int i = 1; i < argc; i++)
 	{
-		if (*argv[i] != '-' && !gamefound)
+		if (*argv[i] == '-') {
+			if (strcmp(argv[i] + 1, "cd") == 0 ||
+				strcmp(argv[i] + 1, "replay-state") == 0 ||
+				strcmp(argv[i] + 1, "replay-inputs") == 0) {
+				i++;
+			}
+			continue;
+		}
+
+		if (!gamefound)
 		{
 			romname = argv[i];
 			gamefound = 1;
 		}
 	}
 
-	parseSwitches(argc, argv);
+	if (ReplayHasStatePath() != ReplayHasInputsPath()) {
+		printf("Replay requires both -replay-state <path> and -replay-inputs <path>\n");
+		return 1;
+	}
 
 	if (romname == NULL)
 	{
-		printf("Usage: %s [-cd] [-joy] [-menu] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] <romname>\n", argv[0]);
+		printf("Usage: %s [-cd] [-joy] [-menu] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] [-replay-state <path>] [-replay-inputs <path>] <romname>\n", argv[0]);
 		printf("Note the -menu switch does not require a romname\n");
 		printf("e.g.: %s mslug\n", argv[0]);
 		printf("e.g.: %s -menu -joy\n", argv[0]);

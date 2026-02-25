@@ -1,11 +1,11 @@
-#include <SDL_image.h>
+#include <SDL.h>
 #include "burner.h"
 #include "sdl2_gui_common.h"
 
 extern char videofiltering[3];
 
 static SDL_Window* sdlWindow = NULL;
-static SDL_Renderer* sdlRenderer = NULL;
+SDL_Renderer* sdlRenderer = NULL;
 
 static SDL_Texture* titleTexture = NULL;
 
@@ -58,12 +58,22 @@ SDL_Texture* LoadTitleImage(SDL_Renderer* renderer, SDL_Texture* loadedTexture)
 	int currentSelected = nBurnDrvActive;
 	nBurnDrvActive = gametoplay;
 #ifndef _WIN32
-	snprintf(titlePath, MAX_PATH, "%s%s.png", "/usr/local/share/titles/", BurnDrvGetTextA(0));
+	snprintf(titlePath, MAX_PATH, "%s%s.bmp", "/usr/local/share/titles/", BurnDrvGetTextA(0));
 #else
-	snprintf(titlePath, MAX_PATH, "support\\titles\\%s.png", BurnDrvGetTextA(0));
+	snprintf(titlePath, MAX_PATH, "support\\titles\\%s.bmp", BurnDrvGetTextA(0));
 #endif
 
-	loadedTexture = IMG_LoadTexture(renderer, titlePath);
+	SDL_Surface* titleSurface = SDL_LoadBMP(titlePath);
+	if (titleSurface == NULL) {
+		nBurnDrvActive = currentSelected;
+		return NULL;
+	}
+	loadedTexture = SDL_CreateTextureFromSurface(renderer, titleSurface);
+	SDL_FreeSurface(titleSurface);
+	if (loadedTexture == NULL) {
+		nBurnDrvActive = currentSelected;
+		return NULL;
+	}
 	SDL_QueryTexture(loadedTexture, NULL, NULL, &w, &h);
 
 	title_texture_rect.x = 0; //the x coordinate
@@ -865,7 +875,7 @@ void gui_render()
 	SDL_SetRenderDrawColor(sdlRenderer, 0x1a, 0x1e, 0x1d, SDL_ALPHA_OPAQUE);
 	SDL_RenderClear(sdlRenderer);
 
-	SDL_Rect fillRect = { 0,  28 + (gamesperscreen_halfway * 10), nVidGuiWidth, 12};
+		SDL_Rect fillRect = { 0, static_cast<int>(28 + (gamesperscreen_halfway * 10)), nVidGuiWidth, 12};
 	SDL_SetRenderDrawColor(sdlRenderer, 0x41, 0x1d, 0x62, 0xFF);
 	SDL_RenderFillRect(sdlRenderer, &fillRect);
 

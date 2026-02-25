@@ -33,6 +33,10 @@ typedef unsigned char   BYTE;
 
 //main.cpp
 int SetBurnHighCol(int nDepth);
+void ReplaySetStatePath(const char* path);
+void ReplaySetInputsPath(const char* path);
+bool ReplayHasStatePath();
+bool ReplayHasInputsPath();
 
 extern int   nAppVirtualFps;
 extern bool  bRunPause;

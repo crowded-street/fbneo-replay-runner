@@ -26,6 +26,9 @@ static int nUseBlitter;
 static int nRotateGame = 0;
 static bool bFlipped = false;
 
+static void SurfToTex();
+static void TexToQuad();
+
 static int BlitFXExit()
 {
 	SDL_DestroyWindow(screen);
@@ -310,6 +313,10 @@ static int Frame(bool bRedraw) // bRedraw = 0
 			pVidTransCallback();
 		}
 	}
+
+	SurfToTex();
+	TexToQuad();
+	SDL_GL_SwapWindow(screen);
 
 	return 0;
 }

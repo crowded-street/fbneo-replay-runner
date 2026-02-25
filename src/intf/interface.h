@@ -132,6 +132,7 @@ INT32 AudSoundGetSampleRate();
 INT32 AudSoundGetSegLen();
 InterfaceInfo* AudGetInfo();
 void AudWriteSilence();
+INT32 AudSetCallback(INT32 (*pCallback)(INT32));
 
 extern INT32 nAudSampleRate[8];     // sample rate
 extern INT32 nAudVolume;			// Sound volume (% * 100)
@@ -250,6 +251,7 @@ extern "C" UINT32 (__cdecl *VidHighCol) (INT32 r, INT32 g, INT32 b, INT32 i);
 
 extern TCHAR szPlaceHolder[MAX_PATH];
 
+#ifdef BUILD_WIN32
 // vid_directx_support.cpp
 
 INT32 VidSNewTinyMsg(const TCHAR* pText, INT32 nRGB = 0, INT32 nDuration = 0, INT32 nPriority = 5);
@@ -283,3 +285,4 @@ void VidSKillOSDMsg();
 
 // overlay for dx9Alt
 #include "vid_overlay.h"
+#endif

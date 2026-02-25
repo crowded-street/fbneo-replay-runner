@@ -1,7 +1,9 @@
 // Run module
 #include "burner.h"
+#include "state.h"
 
 #include <sys/time.h>
+#include <vector>
 
 static unsigned int nDoFPS = 0;
 bool bAltPause = 0;
@@ -33,6 +35,263 @@ static char* szSDLSavePath = NULL;
 #endif
 
 int bDrvSaveAll = 0;
+
+extern int nAcbVersion;
+extern int nAcbLoadState;
+
+static char gReplayStatePath[MAX_PATH] = { 0 };
+static char gReplayInputsPath[MAX_PATH] = { 0 };
+static bool gReplayEnabled = false;
+static bool gReplayLoaded = false;
+static bool gReplayFinished = false;
+static std::vector<UINT8> gReplayInputData;
+static size_t gReplayInputOffset = 0;
+
+struct ReplayBinding {
+	struct GameInp* pgi;
+	UINT8 player;
+	UINT8 bit;
+};
+static std::vector<ReplayBinding> gReplayBindings;
+
+static const UINT8* gReplayScanPtr = NULL;
+static INT32 gReplayScanRemaining = 0;
+static bool gReplayScanFailed = false;
+
+void ReplaySetStatePath(const char* path)
+{
+	snprintf(gReplayStatePath, MAX_PATH, "%s", path ? path : "");
+}
+
+void ReplaySetInputsPath(const char* path)
+{
+	snprintf(gReplayInputsPath, MAX_PATH, "%s", path ? path : "");
+}
+
+bool ReplayHasStatePath()
+{
+	return gReplayStatePath[0] != '\0';
+}
+
+bool ReplayHasInputsPath()
+{
+	return gReplayInputsPath[0] != '\0';
+}
+
+static bool ReplayIsEnabled()
+{
+	return gReplayEnabled;
+}
+
+static INT32 __cdecl ReplayWriteAcb(struct BurnArea* pba)
+{
+	if (pba->nLen > gReplayScanRemaining) {
+		memset(pba->Data, 0, pba->nLen);
+		if (gReplayScanRemaining > 0) {
+			memcpy(pba->Data, gReplayScanPtr, gReplayScanRemaining);
+		}
+		gReplayScanPtr += gReplayScanRemaining;
+		gReplayScanRemaining = 0;
+		gReplayScanFailed = true;
+		return 1;
+	}
+
+	memcpy(pba->Data, gReplayScanPtr, pba->nLen);
+	gReplayScanPtr += pba->nLen;
+	gReplayScanRemaining -= pba->nLen;
+	return 0;
+}
+
+static bool ReplayReadFile(const char* path, std::vector<UINT8>& out)
+{
+	FILE* fp = fopen(path, "rb");
+	if (fp == NULL) {
+		return false;
+	}
+
+	if (fseek(fp, 0, SEEK_END) != 0) {
+		fclose(fp);
+		return false;
+	}
+	long size = ftell(fp);
+	if (size < 0) {
+		fclose(fp);
+		return false;
+	}
+	if (fseek(fp, 0, SEEK_SET) != 0) {
+		fclose(fp);
+		return false;
+	}
+
+	out.resize((size_t)size);
+	if (size > 0) {
+		if (fread(out.data(), 1, (size_t)size, fp) != (size_t)size) {
+			fclose(fp);
+			out.clear();
+			return false;
+		}
+	}
+
+	fclose(fp);
+	return true;
+}
+
+static bool ReplayLoadStateBlob(const std::vector<UINT8>& stateBlob)
+{
+	if (stateBlob.empty()) {
+		printf("Replay state blob is empty\n");
+		return false;
+	}
+
+	const UINT8* payload = stateBlob.data();
+	INT32 payloadLen = (INT32)stateBlob.size();
+
+	if (payloadLen >= (INT32)(6 * sizeof(INT32))) {
+		const INT32* header = (const INT32*)payload;
+		if (header[0] == 'GGPO') {
+			INT32 headerSize = header[1];
+			if (headerSize < (INT32)(2 * sizeof(INT32)) || headerSize > payloadLen) {
+				printf("Replay state header size is invalid (%d)\n", headerSize);
+				return false;
+			}
+			nAcbVersion = header[2];
+			payload += headerSize;
+			payloadLen -= headerSize;
+		}
+	}
+
+	gReplayScanPtr = payload;
+	gReplayScanRemaining = payloadLen;
+	gReplayScanFailed = false;
+
+	BurnAcb = ReplayWriteAcb;
+	nAcbLoadState = 1;
+	BurnAreaScan(ACB_FULLSCANL | ACB_WRITE, NULL);
+	nAcbLoadState = 0;
+	nAcbVersion = nBurnVer;
+
+	if (gReplayScanFailed) {
+		printf("Replay state blob is too small for this driver\n");
+		return false;
+	}
+
+	BurnRecalcPal();
+	return true;
+}
+
+static INT32 ReplayBitFromInfo(const char* szInfo)
+{
+	if (szInfo == NULL) return -1;
+
+	if (strstr(szInfo, " start")) return 1;
+	if (strstr(szInfo, " up")) return 2;
+	if (strstr(szInfo, " down")) return 3;
+	if (strstr(szInfo, " left")) return 4;
+	if (strstr(szInfo, " right")) return 5;
+
+	const char* fire = strstr(szInfo, " fire ");
+	if (fire) {
+		INT32 n = strtol(fire + 6, NULL, 10);
+		if (n >= 1 && n <= 6) {
+			return n + 5; // fire 1..6 => LP..HK bits 6..11
+		}
+	}
+
+	return -1;
+}
+
+static void ReplayBuildBindings()
+{
+	gReplayBindings.clear();
+
+	for (UINT32 i = 0; i < nGameInpCount; i++) {
+		BurnInputInfo bii;
+		memset(&bii, 0, sizeof(bii));
+		if (BurnDrvGetInputInfo(&bii, i) != 0 || bii.pVal == NULL || bii.szInfo == NULL) {
+			continue;
+		}
+
+		INT32 player = -1;
+		if (strncmp(bii.szInfo, "p1 ", 3) == 0) player = 0;
+		if (strncmp(bii.szInfo, "p2 ", 3) == 0) player = 1;
+		if (player < 0) continue;
+
+		INT32 bit = ReplayBitFromInfo(bii.szInfo);
+		if (bit < 0) continue;
+
+		struct GameInp* pgi = &GameInp[i];
+		if (pgi->nInput != GIT_SWITCH) continue;
+
+		ReplayBinding binding;
+		binding.pgi = pgi;
+		binding.player = (UINT8)player;
+		binding.bit = (UINT8)bit;
+		gReplayBindings.push_back(binding);
+	}
+}
+
+static void ReplayApplyFrameInputs()
+{
+	if (gReplayFinished) {
+		return;
+	}
+
+	UINT16 masks[2] = { 0, 0 };
+	if ((gReplayInputOffset + 10) > gReplayInputData.size()) {
+		gReplayFinished = true;
+		return;
+	}
+
+	const UINT8* frame = &gReplayInputData[gReplayInputOffset];
+	masks[0] = (UINT16)frame[0] | ((UINT16)frame[1] << 8);
+	masks[1] = (UINT16)frame[5] | ((UINT16)frame[6] << 8);
+	gReplayInputOffset += 10;
+
+	for (size_t i = 0; i < gReplayBindings.size(); i++) {
+		ReplayBinding& b = gReplayBindings[i];
+		const bool pressed = ((masks[b.player] >> b.bit) & 1) != 0;
+		b.pgi->Input.nVal = pressed ? 1 : 0;
+		if (b.pgi->Input.pVal) {
+			*b.pgi->Input.pVal = (UINT8)b.pgi->Input.nVal;
+		}
+	}
+}
+
+static bool ReplayInit()
+{
+	gReplayEnabled = ReplayHasStatePath() && ReplayHasInputsPath();
+	gReplayLoaded = false;
+	gReplayFinished = false;
+	gReplayInputData.clear();
+	gReplayInputOffset = 0;
+	gReplayBindings.clear();
+
+	if (!gReplayEnabled) {
+		return true;
+	}
+
+	std::vector<UINT8> stateBlob;
+	if (!ReplayReadFile(gReplayStatePath, stateBlob)) {
+		printf("Failed to read replay state blob: %s\n", gReplayStatePath);
+		return false;
+	}
+	if (!ReplayReadFile(gReplayInputsPath, gReplayInputData)) {
+		printf("Failed to read replay inputs blob: %s\n", gReplayInputsPath);
+		return false;
+	}
+	if ((gReplayInputData.size() % 10) != 0) {
+		printf("Replay inputs blob size must be a multiple of 10 bytes, got %zu\n", gReplayInputData.size());
+		return false;
+	}
+	if (!ReplayLoadStateBlob(stateBlob)) {
+		return false;
+	}
+
+	ReplayBuildBindings();
+	gReplayLoaded = true;
+	printf("Replay loaded: %zu frames, %zu input bindings\n", gReplayInputData.size() / 10, gReplayBindings.size());
+	return true;
+}
 
 // The automatic save
 int StatedAuto(int bSave)
@@ -141,14 +400,20 @@ static int RunFrame(int bDraw, int bPause)
 
 	if (bPause)
 	{
-		InputMake(false);
+		if (!ReplayIsEnabled()) {
+			InputMake(false);
+		}
 		VidPaint(0);
 	}
 	else
 	{
 		nFramesEmulated++;
 		nCurrentFrame++;
-		InputMake(true);
+		if (ReplayIsEnabled()) {
+			ReplayApplyFrameInputs();
+		} else {
+			InputMake(true);
+		}
 	}
 
 	if (bDraw)
@@ -317,14 +582,21 @@ int RunInit()
 	AudSoundPlay();
 
 	RunReset();
-	StatedAuto(0);
+	if (!ReplayInit()) {
+		return 1;
+	}
+	if (!ReplayIsEnabled()) {
+		StatedAuto(0);
+	}
 	return 0;
 }
 
 int RunExit()
 {
 	nNormalLast = 0;
-	StatedAuto(1);
+	if (!ReplayIsEnabled()) {
+		StatedAuto(1);
+	}
 	return 0;
 }
 
@@ -365,7 +637,9 @@ int RunMessageLoop()
 					break;
 #ifdef BUILD_SDL2
 				case SDLK_TAB:
-					ingame_gui_start(sdlRenderer);
+					if (sdlRenderer) {
+						ingame_gui_start(sdlRenderer);
+					}
 					break;
 #endif
 				default:
@@ -391,6 +665,9 @@ int RunMessageLoop()
 			}
 		}
 		RunIdle();
+		if (ReplayIsEnabled() && gReplayFinished) {
+			quit = 1;
+		}
 	}
 
 	RunExit();
