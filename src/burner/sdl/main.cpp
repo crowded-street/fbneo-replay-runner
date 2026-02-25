@@ -122,6 +122,14 @@ int parseSwitches(int argc, char* argv[])
 			}
 			ReplaySetInputsPath(argv[i + 1]);
 		}
+		if (strcmp(argv[i] + 1, "dump-ram-path") == 0)
+		{
+			if ((i + 1) >= argc) {
+				printf("Missing value for -dump-ram-path\n");
+				return 1;
+			}
+			ReplaySetDumpRamPath(argv[i + 1]);
+		}
 	}
 	return 0;
 }
@@ -320,7 +328,8 @@ int main(int argc, char* argv[])
 		if (*argv[i] == '-') {
 			if (strcmp(argv[i] + 1, "cd") == 0 ||
 				strcmp(argv[i] + 1, "replay-state") == 0 ||
-				strcmp(argv[i] + 1, "replay-inputs") == 0) {
+				strcmp(argv[i] + 1, "replay-inputs") == 0 ||
+				strcmp(argv[i] + 1, "dump-ram-path") == 0) {
 				i++;
 			}
 			continue;
@@ -340,7 +349,7 @@ int main(int argc, char* argv[])
 
 	if (romname == NULL)
 	{
-		printf("Usage: %s [-cd] [-joy] [-menu] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] [-replay-state <path>] [-replay-inputs <path>] <romname>\n", argv[0]);
+		printf("Usage: %s [-cd] [-joy] [-menu] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] [-replay-state <path>] [-replay-inputs <path>] [-dump-ram-path <dir>] <romname>\n", argv[0]);
 		printf("Note the -menu switch does not require a romname\n");
 		printf("e.g.: %s mslug\n", argv[0]);
 		printf("e.g.: %s -menu -joy\n", argv[0]);

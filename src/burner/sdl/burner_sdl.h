@@ -37,6 +37,8 @@ void ReplaySetStatePath(const char* path);
 void ReplaySetInputsPath(const char* path);
 bool ReplayHasStatePath();
 bool ReplayHasInputsPath();
+void ReplaySetDumpRamPath(const char* path);
+bool ReplayHasDumpRamPath();
 
 extern int   nAppVirtualFps;
 extern bool  bRunPause;

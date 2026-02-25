@@ -3,6 +3,8 @@
 #include "state.h"
 
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <vector>
 
 static unsigned int nDoFPS = 0;
@@ -41,6 +43,7 @@ extern int nAcbLoadState;
 
 static char gReplayStatePath[MAX_PATH] = { 0 };
 static char gReplayInputsPath[MAX_PATH] = { 0 };
+static char gDumpRamPath[MAX_PATH] = { 0 };
 static bool gReplayEnabled = false;
 static bool gReplayLoaded = false;
 static bool gReplayFinished = false;
@@ -57,6 +60,8 @@ static std::vector<ReplayBinding> gReplayBindings;
 static const UINT8* gReplayScanPtr = NULL;
 static INT32 gReplayScanRemaining = 0;
 static bool gReplayScanFailed = false;
+static std::vector<UINT8>* gDumpRawBuffer = NULL;
+static bool gDumpRawCaptured = false;
 
 void ReplaySetStatePath(const char* path)
 {
@@ -78,9 +83,80 @@ bool ReplayHasInputsPath()
 	return gReplayInputsPath[0] != '\0';
 }
 
+void ReplaySetDumpRamPath(const char* path)
+{
+	snprintf(gDumpRamPath, MAX_PATH, "%s", path ? path : "");
+}
+
+bool ReplayHasDumpRamPath()
+{
+	return gDumpRamPath[0] != '\0';
+}
+
 static bool ReplayIsEnabled()
 {
 	return gReplayEnabled;
+}
+
+static bool ReplayDumpRamFrame(UINT32 frameNumber)
+{
+	if (!ReplayHasDumpRamPath()) {
+		return true;
+	}
+
+	if (mkdir(gDumpRamPath, 0755) != 0 && errno != EEXIST) {
+		printf("Failed to create dump directory: %s\n", gDumpRamPath);
+		return false;
+	}
+
+	auto DumpRawAcb = [](struct BurnArea* pba) -> INT32 {
+		if (gDumpRawBuffer == NULL || pba == NULL || pba->Data == NULL || pba->nLen <= 0) {
+			return 1;
+		}
+		// We only dump CPS3 "Main RAM" from the BurnArea scan layout:
+		// this is the SH-2 main CPU RAM block (0x80000 bytes), not VRAM/palette/driver-data.
+		if (!gDumpRawCaptured && pba->szName && strcmp(pba->szName, "Main RAM") == 0) {
+			gDumpRawBuffer->resize(0x80000);
+			size_t copyLen = ((size_t)pba->nLen < 0x80000) ? (size_t)pba->nLen : (size_t)0x80000;
+			memcpy(gDumpRawBuffer->data(), pba->Data, copyLen);
+			if (copyLen < 0x80000) {
+				memset(gDumpRawBuffer->data() + copyLen, 0, 0x80000 - copyLen);
+			}
+			gDumpRawCaptured = true;
+		}
+		return 0;
+	};
+
+	std::vector<UINT8> rawRam;
+	gDumpRawBuffer = &rawRam;
+	gDumpRawCaptured = false;
+	BurnAcb = DumpRawAcb;
+	BurnAreaScan(ACB_FULLSCANL | ACB_READ, NULL);
+	gDumpRawBuffer = NULL;
+
+	if (rawRam.size() != 0x80000) {
+		printf("Failed to collect Main RAM (0x80000) for frame %u\n", frameNumber);
+		return false;
+	}
+
+	char outPath[MAX_PATH];
+	snprintf(outPath, MAX_PATH, "%s/frame_%08u.ram", gDumpRamPath, frameNumber);
+
+	FILE* fp = fopen(outPath, "wb");
+	if (fp == NULL) {
+		printf("Failed to open RAM dump path: %s\n", outPath);
+		return false;
+	}
+
+	bool ok = fwrite(rawRam.data(), 1, rawRam.size(), fp) == rawRam.size();
+	fclose(fp);
+
+	if (!ok) {
+		printf("Failed to write RAM dump file: %s\n", outPath);
+		return false;
+	}
+
+	return true;
 }
 
 static INT32 __cdecl ReplayWriteAcb(struct BurnArea* pba)
@@ -431,6 +507,12 @@ static int RunFrame(int bDraw, int bPause)
 		BurnDrvFrame();
 	}
 
+	if (!bPause && ReplayHasDumpRamPath()) {
+		if (!ReplayDumpRamFrame(nCurrentFrame)) {
+			return 1;
+		}
+	}
+
 	if (bAppShowFPS) {
 		if (nDoFPS < nFramesRendered) {
 			DisplayFPS();
@@ -587,6 +669,9 @@ int RunInit()
 	}
 	if (!ReplayIsEnabled()) {
 		StatedAuto(0);
+	}
+	if (ReplayHasDumpRamPath()) {
+		ReplayDumpRamFrame(nCurrentFrame);
 	}
 	return 0;
 }
