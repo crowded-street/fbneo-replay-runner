@@ -1,5 +1,8 @@
 # FBNeo Replay Runner
 
+- Allows playing back replays from fightcade.com
+- Allows generating per-frame RAM dumps in a matter of seconds
+
 ## Build
 
 ### macOS
