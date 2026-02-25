@@ -45,6 +45,7 @@ extern bool  bRunPause;
 extern bool  bAppDoFast;    // TODO: bad
 extern char  fpsstring[20]; // TODO: also bad
 extern bool  bAppShowFPS;   // TODO: Also also bad
+extern bool  bHeadlessMode;
 extern bool  bAlwaysProcessKeyboardInput;
 extern TCHAR szAppBurnVer[16];
 extern bool  bAppFullscreen;

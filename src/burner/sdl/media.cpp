@@ -12,6 +12,12 @@ int MediaInit()
 
 	nAppVirtualFps = nBurnFPS;
 
+	if (bHeadlessMode) {
+		nBurnSoundRate = 0;
+		pBurnSoundOut = NULL;
+		return 0;
+	}
+
 	if (!bAudOkay)
 	{
 		AudSoundInit();                           // Init Sound (not critical if it fails)
@@ -60,9 +66,11 @@ int MediaExit()
 	nBurnSoundRate = 0;              // Blank sound
 	pBurnSoundOut = NULL;
 
-	AudSoundExit();                  // Exit sound
-	bAudOkay = 0;
-	VidExit();
+	if (!bHeadlessMode) {
+		AudSoundExit();                  // Exit sound
+		bAudOkay = 0;
+		VidExit();
+	}
 
 	InputExit();
 

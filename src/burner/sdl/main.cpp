@@ -22,6 +22,7 @@ int  nAppVirtualFps = 0;         // App fps * 100
 bool bRunPause = 0;
 bool bAppFullscreen = 0;
 bool bAlwaysProcessKeyboardInput = 0;
+bool bHeadlessMode = 0;
 int  usemenu = 0, usejoy = 0, vsync = 1, dat = 0;
 bool bSaveconfig = 1;
 bool bIntegerScale = false;
@@ -97,6 +98,10 @@ int parseSwitches(int argc, char* argv[])
 		if (strcmp(argv[i] + 1, "autosave") == 0)
 		{
 			bDrvSaveAll = 1;
+		}
+		if (strcmp(argv[i] + 1, "headless") == 0)
+		{
+			bHeadlessMode = 1;
 		}
 		if (strcmp(argv[i] + 1, "cd") == 0)
 		{
@@ -346,10 +351,14 @@ int main(int argc, char* argv[])
 		printf("Replay requires both -replay-state <path> and -replay-inputs <path>\n");
 		return 1;
 	}
+	if (bHeadlessMode && usemenu) {
+		printf("-headless cannot be used with -menu\n");
+		return 1;
+	}
 
 	if (romname == NULL)
 	{
-		printf("Usage: %s [-cd] [-joy] [-menu] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] [-replay-state <path>] [-replay-inputs <path>] [-dump-ram-path <dir>] <romname>\n", argv[0]);
+		printf("Usage: %s [-cd] [-joy] [-menu] [-headless] [-novsync] [-integerscale] [-fullscreen] [-dat] [-autosave] [-nearest] [-linear] [-best] [-replay-state <path>] [-replay-inputs <path>] [-dump-ram-path <dir>] <romname>\n", argv[0]);
 		printf("Note the -menu switch does not require a romname\n");
 		printf("e.g.: %s mslug\n", argv[0]);
 		printf("e.g.: %s -menu -joy\n", argv[0]);
@@ -399,14 +408,20 @@ int main(int argc, char* argv[])
 
 	SDL_setenv("SDL_AUDIODRIVER", "directsound", true);        // fix audio for windows
 #endif
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO) < 0)
+	UINT32 sdlInitFlags = SDL_INIT_TIMER;
+	if (!bHeadlessMode) {
+		sdlInitFlags |= SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO;
+	}
+	if (SDL_Init(sdlInitFlags) < 0)
 	{
 		printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
 		return 0;
 	}
 #endif
 
-	SDL_ShowCursor(SDL_DISABLE);
+	if (!bHeadlessMode) {
+		SDL_ShowCursor(SDL_DISABLE);
+	}
 
 #if defined(BUILD_SDL2) && !defined(SDL_WINDOWS)
 	szSDLhiscorePath = SDL_GetPrefPath("fbneo", "hiscore");

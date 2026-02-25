@@ -474,6 +474,28 @@ static int RunFrame(int bDraw, int bPause)
 		return 1;
 	}
 
+	if (bHeadlessMode) {
+		if (!bPause) {
+			nFramesEmulated++;
+			nCurrentFrame++;
+			if (ReplayIsEnabled()) {
+				ReplayApplyFrameInputs();
+			} else {
+				InputMake(true);
+			}
+			pBurnDraw = NULL;
+			pBurnSoundOut = NULL;
+			BurnDrvFrame();
+		}
+
+		if (ReplayHasDumpRamPath()) {
+			if (!ReplayDumpRamFrame(nCurrentFrame)) {
+				return 1;
+			}
+		}
+		return 0;
+	}
+
 	if (bPause)
 	{
 		if (!ReplayIsEnabled()) {
@@ -660,8 +682,10 @@ int RunInit()
 	gettimeofday(&start, NULL);
 	DisplayFPSInit();
 	// Try to run with sound
-	AudSetCallback(RunGetNextSound);
-	AudSoundPlay();
+	if (!bHeadlessMode) {
+		AudSetCallback(RunGetNextSound);
+		AudSoundPlay();
+	}
 
 	RunReset();
 	if (!ReplayInit()) {
@@ -696,57 +720,59 @@ int RunMessageLoop()
 
 	while (!quit)
 	{
-		SDL_Event event;
-		while (SDL_PollEvent(&event))
-		{
-			switch (event.type)
+		if (!bHeadlessMode) {
+			SDL_Event event;
+			while (SDL_PollEvent(&event))
 			{
-			case SDL_QUIT:                                        /* Windows was closed */
-				quit = 1;
-				break;
-
-			case SDL_KEYDOWN:                                                // need to find a nicer way of doing this...
-				switch (event.key.keysym.sym)
+				switch (event.type)
 				{
-				case SDLK_F1:
-					bAppDoFast = 1;
-					break;
-				case SDLK_F9:
-					QuickState(0);
-					break;
-				case SDLK_F10:
-					QuickState(1);
-					break;
-				case SDLK_F11:
-					bAppShowFPS = !bAppShowFPS;
-					break;
-#ifdef BUILD_SDL2
-				case SDLK_TAB:
-					if (sdlRenderer) {
-						ingame_gui_start(sdlRenderer);
-					}
-					break;
-#endif
-				default:
-					break;
-				}
-				break;
-
-			case SDL_KEYUP:                                                // need to find a nicer way of doing this...
-				switch (event.key.keysym.sym)
-				{
-				case SDLK_F1:
-					bAppDoFast = 0;
-					break;
-
-				case SDLK_F12:
+				case SDL_QUIT:                                        /* Windows was closed */
 					quit = 1;
 					break;
 
-				default:
+				case SDL_KEYDOWN:                                                // need to find a nicer way of doing this...
+					switch (event.key.keysym.sym)
+					{
+					case SDLK_F1:
+						bAppDoFast = 1;
+						break;
+					case SDLK_F9:
+						QuickState(0);
+						break;
+					case SDLK_F10:
+						QuickState(1);
+						break;
+					case SDLK_F11:
+						bAppShowFPS = !bAppShowFPS;
+						break;
+#ifdef BUILD_SDL2
+					case SDLK_TAB:
+						if (sdlRenderer) {
+							ingame_gui_start(sdlRenderer);
+						}
+						break;
+#endif
+					default:
+						break;
+					}
+					break;
+
+				case SDL_KEYUP:                                                // need to find a nicer way of doing this...
+					switch (event.key.keysym.sym)
+					{
+					case SDLK_F1:
+						bAppDoFast = 0;
+						break;
+
+					case SDLK_F12:
+						quit = 1;
+						break;
+
+					default:
+						break;
+					}
 					break;
 				}
-				break;
 			}
 		}
 		RunIdle();
