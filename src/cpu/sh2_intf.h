@@ -11,6 +11,7 @@ typedef unsigned short (__fastcall *pSh2ReadWordHandler)(unsigned int a);
 typedef void (__fastcall *pSh2WriteWordHandler)(unsigned int a, unsigned short d);
 typedef unsigned int (__fastcall *pSh2ReadLongHandler)(unsigned int a);
 typedef void (__fastcall *pSh2WriteLongHandler)(unsigned int a, unsigned int d);
+typedef void (*pSh2ExecHandler)(unsigned int current_pc, unsigned int branch_target_pc, unsigned int delay_slot_pc);
 
 extern int has_sh2;
 extern INT32 cps3speedhack;
@@ -41,6 +42,7 @@ int Sh2SetReadLongHandler(int i, pSh2ReadLongHandler pHandler);
 int Sh2SetWriteLongHandler(int i, pSh2WriteLongHandler pHandler);
 
 void Sh2SetIRQLine(const int line, const int state);
+void Sh2SetExecHandler(pSh2ExecHandler pHandler);
 
 unsigned int Sh2GetPC(int n);
 void Sh2StopRun();

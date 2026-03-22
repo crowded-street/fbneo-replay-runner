@@ -36,6 +36,7 @@
 int has_sh2;
 INT32 cps3speedhack; // must be set _after_ Sh2Init();
 INT32 sh2_busyloop_speedhack_mode2;
+static pSh2ExecHandler pSh2ExecHandlerCallback = NULL;
 
 #define BUSY_LOOP_HACKS     1
 #define FAST_OP_FETCH		1
@@ -3289,12 +3290,15 @@ int Sh2Run(int cycles)
 
 		if (pSh2Ext->suspend == 0) {
 			UINT16 opcode;
+			UINT32 current_pc;
 
 			if (sh2->delay) {
+				current_pc = sh2->delay & AM;
 				opcode = cpu_readop16(sh2->delay & AM);
 				change_pc(sh2->pc & AM);
 				sh2->delay = 0;
 			} else {
+				current_pc = sh2->pc & AM;
 				opcode = cpu_readop16(sh2->pc & AM);
 				sh2->pc += 2;
 			}
@@ -3318,9 +3322,13 @@ int Sh2Run(int cycles)
 				case 12<<12: op1100(opcode); break;
 				case 13<<12: op1101(opcode); break;
 				case 14<<12: op1110(opcode); break;
-			default: op1111(opcode); break;
+				default: op1111(opcode); break;
+				}
+
+				if (pSh2ExecHandlerCallback != NULL) {
+					pSh2ExecHandlerCallback(current_pc, sh2->pc & AM, sh2->delay ? (sh2->delay & AM) : 0);
+				}
 			}
-		}
 
 		if(sh2->test_irq && !sh2->delay)
 		{
@@ -3400,6 +3408,11 @@ void Sh2SetIRQLine(const int line, const int state)
 			Sh2SetIRQLine_Internal(line, state);
 			break;
 	}
+}
+
+void Sh2SetExecHandler(pSh2ExecHandler pHandler)
+{
+	pSh2ExecHandlerCallback = pHandler;
 }
 
 unsigned int Sh2GetPC(int)

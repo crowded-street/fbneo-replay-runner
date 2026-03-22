@@ -1,6 +1,8 @@
 // Run module
 #include "burner.h"
 #include "state.h"
+#include "cps3.h"
+#include "sh2_intf.h"
 
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -49,6 +51,7 @@ static bool gReplayLoaded = false;
 static bool gReplayFinished = false;
 static std::vector<UINT8> gReplayInputData;
 static size_t gReplayInputOffset = 0;
+static UINT32 gDumpLoopSequenceNumber = 0;
 
 struct ReplayBinding {
 	struct GameInp* pgi;
@@ -60,8 +63,14 @@ static std::vector<ReplayBinding> gReplayBindings;
 static const UINT8* gReplayScanPtr = NULL;
 static INT32 gReplayScanRemaining = 0;
 static bool gReplayScanFailed = false;
-static std::vector<UINT8>* gDumpRawBuffer = NULL;
-static bool gDumpRawCaptured = false;
+
+struct DumpLoopBoundaryState {
+	bool enabled;
+	bool pendingDelaySlotCompletion;
+	UINT32 loopStartPc;
+	UINT32 loopBranchPc;
+};
+static DumpLoopBoundaryState gDumpLoopBoundary = { false, false, 0x06094d7a, 0x06094daa };
 
 void ReplaySetStatePath(const char* path)
 {
@@ -98,7 +107,7 @@ static bool ReplayIsEnabled()
 	return gReplayEnabled;
 }
 
-static bool ReplayDumpRamFrame(UINT32 frameNumber)
+static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 {
 	if (!ReplayHasDumpRamPath()) {
 		return true;
@@ -109,34 +118,25 @@ static bool ReplayDumpRamFrame(UINT32 frameNumber)
 		return false;
 	}
 
-	auto DumpRawAcb = [](struct BurnArea* pba) -> INT32 {
-		if (gDumpRawBuffer == NULL || pba == NULL || pba->Data == NULL || pba->nLen <= 0) {
-			return 1;
-		}
-		// We only dump CPS3 "Main RAM" from the BurnArea scan layout:
-		// this is the SH-2 main CPU RAM block (0x80000 bytes), not VRAM/palette/driver-data.
-		if (!gDumpRawCaptured && pba->szName && strcmp(pba->szName, "Main RAM") == 0) {
-			gDumpRawBuffer->resize(0x80000);
-			size_t copyLen = ((size_t)pba->nLen < 0x80000) ? (size_t)pba->nLen : (size_t)0x80000;
-			memcpy(gDumpRawBuffer->data(), pba->Data, copyLen);
-			if (copyLen < 0x80000) {
-				memset(gDumpRawBuffer->data() + copyLen, 0, 0x80000 - copyLen);
-			}
-			gDumpRawCaptured = true;
-		}
-		return 0;
-	};
-
-	std::vector<UINT8> rawRam;
-	gDumpRawBuffer = &rawRam;
-	gDumpRawCaptured = false;
-	BurnAcb = DumpRawAcb;
-	BurnAreaScan(ACB_FULLSCANL | ACB_READ, NULL);
-	gDumpRawBuffer = NULL;
-
-	if (rawRam.size() != 0x80000) {
-		printf("Failed to collect Main RAM (0x80000) for frame %u\n", frameNumber);
+	UINT8* ram = cps3GetMainRam();
+	const INT32 ramSize = cps3GetMainRamSize();
+	if (ram == NULL || ramSize != 0x80000) {
+		printf("Failed to access CPS3 Main RAM for frame %u\n", frameNumber);
 		return false;
+	}
+
+	std::vector<UINT8> rawRam((size_t)ramSize);
+	memcpy(rawRam.data(), ram, (size_t)ramSize);
+
+	// CPS3 SH-2 memory uses big-endian byte addressing mapped onto host 32-bit lanes.
+	// Normalize dumps by reversing bytes within each 32-bit word.
+	for (size_t i = 0; i + 3 < rawRam.size(); i += 4) {
+		UINT8 b0 = rawRam[i + 0];
+		UINT8 b1 = rawRam[i + 1];
+		rawRam[i + 0] = rawRam[i + 3];
+		rawRam[i + 1] = rawRam[i + 2];
+		rawRam[i + 2] = b1;
+		rawRam[i + 3] = b0;
 	}
 
 	char outPath[MAX_PATH];
@@ -148,7 +148,7 @@ static bool ReplayDumpRamFrame(UINT32 frameNumber)
 		return false;
 	}
 
-	bool ok = fwrite(rawRam.data(), 1, rawRam.size(), fp) == rawRam.size();
+	const bool ok = fwrite(rawRam.data(), 1, rawRam.size(), fp) == rawRam.size();
 	fclose(fp);
 
 	if (!ok) {
@@ -157,6 +157,40 @@ static bool ReplayDumpRamFrame(UINT32 frameNumber)
 	}
 
 	return true;
+}
+
+static void ReplayDumpLoopBoundaryHook(UINT32 currentPc, UINT32 branchTargetPc, UINT32 delaySlotPc)
+{
+	if (!gDumpLoopBoundary.enabled) {
+		return;
+	}
+
+	if (gDumpLoopBoundary.pendingDelaySlotCompletion) {
+		if (delaySlotPc == 0 && branchTargetPc == gDumpLoopBoundary.loopStartPc) {
+			if (!ReplayDumpCps3MainRam(gDumpLoopSequenceNumber++)) {
+				bRunPause = 1;
+			}
+			gDumpLoopBoundary.pendingDelaySlotCompletion = false;
+		}
+		return;
+	}
+
+	if (currentPc != gDumpLoopBoundary.loopBranchPc) {
+		return;
+	}
+
+	if (branchTargetPc != gDumpLoopBoundary.loopStartPc) {
+		return;
+	}
+
+	if (delaySlotPc != 0) {
+		gDumpLoopBoundary.pendingDelaySlotCompletion = true;
+		return;
+	}
+
+	if (!ReplayDumpCps3MainRam(gDumpLoopSequenceNumber++)) {
+		bRunPause = 1;
+	}
 }
 
 static INT32 __cdecl ReplayWriteAcb(struct BurnArea* pba)
@@ -484,17 +518,11 @@ static int RunFrame(int bDraw, int bPause)
 				InputMake(true);
 			}
 			pBurnDraw = NULL;
-			pBurnSoundOut = NULL;
-			BurnDrvFrame();
-		}
-
-		if (ReplayHasDumpRamPath()) {
-			if (!ReplayDumpRamFrame(nCurrentFrame)) {
-				return 1;
+				pBurnSoundOut = NULL;
+				BurnDrvFrame();
 			}
+			return 0;
 		}
-		return 0;
-	}
 
 	if (bPause)
 	{
@@ -527,12 +555,6 @@ static int RunFrame(int bDraw, int bPause)
 	{                                       // frame skipping
 		pBurnDraw = NULL;                    // Make sure no image is drawn
 		BurnDrvFrame();
-	}
-
-	if (!bPause && ReplayHasDumpRamPath()) {
-		if (!ReplayDumpRamFrame(nCurrentFrame)) {
-			return 1;
-		}
 	}
 
 	if (bAppShowFPS) {
@@ -691,11 +713,14 @@ int RunInit()
 	if (!ReplayInit()) {
 		return 1;
 	}
+	gDumpLoopBoundary.enabled =
+		ReplayHasDumpRamPath() &&
+		((BurnDrvGetHardwareCode() & HARDWARE_PUBLIC_MASK) == HARDWARE_CAPCOM_CPS3);
+	gDumpLoopBoundary.pendingDelaySlotCompletion = false;
+	gDumpLoopSequenceNumber = 0;
+	Sh2SetExecHandler(gDumpLoopBoundary.enabled ? ReplayDumpLoopBoundaryHook : NULL);
 	if (!ReplayIsEnabled()) {
 		StatedAuto(0);
-	}
-	if (ReplayHasDumpRamPath()) {
-		ReplayDumpRamFrame(nCurrentFrame);
 	}
 	return 0;
 }
@@ -703,6 +728,7 @@ int RunInit()
 int RunExit()
 {
 	nNormalLast = 0;
+	Sh2SetExecHandler(NULL);
 	if (!ReplayIsEnabled()) {
 		StatedAuto(1);
 	}

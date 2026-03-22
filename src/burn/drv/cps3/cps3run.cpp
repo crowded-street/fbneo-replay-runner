@@ -2095,6 +2095,16 @@ INT32 cps3Frame()
 	return 0;
 }
 
+UINT8* cps3GetMainRam()
+{
+	return RamMain;
+}
+
+INT32 cps3GetMainRamSize()
+{
+	return 0x0080000;
+}
+
 INT32 cps3Scan(INT32 nAction, INT32 *pnMin)
 {
 	if (pnMin) *pnMin =  0x029672;
