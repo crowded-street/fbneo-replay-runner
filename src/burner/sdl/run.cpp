@@ -52,6 +52,9 @@ static bool gReplayFinished = false;
 static std::vector<UINT8> gReplayInputData;
 static size_t gReplayInputOffset = 0;
 static UINT32 gDumpLoopSequenceNumber = 0;
+static UINT32 gDumpGameIndex = 0;
+static UINT32 gDumpFrameIndex = 0;
+static bool gDumpWasInGame = false;
 
 struct ReplayBinding {
 	struct GameInp* pgi;
@@ -71,6 +74,8 @@ struct DumpLoopBoundaryState {
 	UINT32 loopBranchPc;
 };
 static DumpLoopBoundaryState gDumpLoopBoundary = { false, false, 0x06094d7a, 0x06094daa };
+static const INT32 kDumpGameStateOffset = 0x15438;
+static const UINT16 kDumpInGameState = 2;
 
 void ReplaySetStatePath(const char* path)
 {
@@ -102,6 +107,37 @@ bool ReplayHasDumpRamPath()
 	return gDumpRamPath[0] != '\0';
 }
 
+static bool ReplayEnsureDirectoryExists(const char* path)
+{
+	if (mkdir(path, 0755) != 0 && errno != EEXIST) {
+		return false;
+	}
+
+	return true;
+}
+
+static bool ReplayCreateGameDumpDirectory(UINT32 gameIndex)
+{
+	char gamePath[MAX_PATH];
+	snprintf(gamePath, MAX_PATH, "%s/game_%u", gDumpRamPath, gameIndex);
+
+	if (!ReplayEnsureDirectoryExists(gamePath)) {
+		printf("Failed to create dump directory: %s\n", gamePath);
+		return false;
+	}
+
+	return true;
+}
+
+static UINT16 ReplayReadBigEndianU16(const UINT8* data, size_t size, size_t offset)
+{
+	if (offset + 1 >= size) {
+		return 0;
+	}
+
+	return ((UINT16)data[offset] << 8) | (UINT16)data[offset + 1];
+}
+
 static bool ReplayIsEnabled()
 {
 	return gReplayEnabled;
@@ -113,7 +149,7 @@ static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 		return true;
 	}
 
-	if (mkdir(gDumpRamPath, 0755) != 0 && errno != EEXIST) {
+	if (!ReplayEnsureDirectoryExists(gDumpRamPath)) {
 		printf("Failed to create dump directory: %s\n", gDumpRamPath);
 		return false;
 	}
@@ -139,8 +175,28 @@ static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 		rawRam[i + 3] = b0;
 	}
 
+	const bool isInGame =
+		ReplayReadBigEndianU16(rawRam.data(), rawRam.size(), (size_t)kDumpGameStateOffset) == kDumpInGameState;
+
+	if (gDumpWasInGame && !isInGame) {
+		gDumpGameIndex++;
+		gDumpFrameIndex = 0;
+		if (!ReplayCreateGameDumpDirectory(gDumpGameIndex)) {
+			return false;
+		}
+	}
+	gDumpWasInGame = isInGame;
+
+	if (!isInGame) {
+		return true;
+	}
+
+	if (!ReplayCreateGameDumpDirectory(gDumpGameIndex)) {
+		return false;
+	}
+
 	char outPath[MAX_PATH];
-	snprintf(outPath, MAX_PATH, "%s/frame_%08u.ram", gDumpRamPath, frameNumber);
+	snprintf(outPath, MAX_PATH, "%s/game_%u/frame_%08u.ram", gDumpRamPath, gDumpGameIndex, gDumpFrameIndex);
 
 	FILE* fp = fopen(outPath, "wb");
 	if (fp == NULL) {
@@ -156,6 +212,7 @@ static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 		return false;
 	}
 
+	gDumpFrameIndex++;
 	return true;
 }
 
@@ -718,6 +775,9 @@ int RunInit()
 		((BurnDrvGetHardwareCode() & HARDWARE_PUBLIC_MASK) == HARDWARE_CAPCOM_CPS3);
 	gDumpLoopBoundary.pendingDelaySlotCompletion = false;
 	gDumpLoopSequenceNumber = 0;
+	gDumpGameIndex = 0;
+	gDumpFrameIndex = 0;
+	gDumpWasInGame = false;
 	Sh2SetExecHandler(gDumpLoopBoundary.enabled ? ReplayDumpLoopBoundaryHook : NULL);
 	if (!ReplayIsEnabled()) {
 		StatedAuto(0);
