@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdint.h>
 
 #ifndef FASTCALL
@@ -12,6 +14,24 @@ typedef void (__fastcall *pSh2WriteWordHandler)(unsigned int a, unsigned short d
 typedef unsigned int (__fastcall *pSh2ReadLongHandler)(unsigned int a);
 typedef void (__fastcall *pSh2WriteLongHandler)(unsigned int a, unsigned int d);
 typedef void (*pSh2ExecHandler)(unsigned int current_pc, unsigned int branch_target_pc, unsigned int delay_slot_pc);
+
+struct Sh2RegisterSnapshot {
+	unsigned int ppc;
+	unsigned int pc;
+	unsigned int pr;
+	unsigned int sr;
+	unsigned int gbr;
+	unsigned int vbr;
+	unsigned int mach;
+	unsigned int macl;
+	unsigned int r[16];
+	unsigned int ea;
+	unsigned int delay;
+	unsigned int pending_irq;
+	unsigned int test_irq;
+	unsigned int internal_irq_level;
+	unsigned int internal_irq_vector;
+};
 
 extern int has_sh2;
 extern INT32 cps3speedhack;
@@ -45,6 +65,7 @@ void Sh2SetIRQLine(const int line, const int state);
 void Sh2SetExecHandler(pSh2ExecHandler pHandler);
 
 unsigned int Sh2GetPC(int n);
+int Sh2GetRegisters(int n, Sh2RegisterSnapshot* out);
 void Sh2StopRun();
 void Sh2SetVBR(unsigned int i);
 

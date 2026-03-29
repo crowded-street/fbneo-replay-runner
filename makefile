@@ -88,6 +88,12 @@ mamemingw: FORCE
 sdl: FORCE
 	@$(MAKE) -s -f makefile.sdl
 
+sdl-debug: FORCE
+	@$(MAKE) -s -f makefile.sdl DEBUG=1 RELEASEBUILD=
+
+sdl-release: FORCE
+	@$(MAKE) -s -f makefile.sdl DEBUG= RELEASEBUILD=1
+
 vc: FORCE
 	@$(MAKE) -s -f makefile.vc
 

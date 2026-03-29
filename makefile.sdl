@@ -218,7 +218,7 @@ drvobj	+= \
 		d_sg1000.o
 
 	depobj	+= \
-		bzip.o config.o drv.o dynhuff.o inpdipsw.o input_sdl2.o main.o media.o run.o stated.o \
+		bzip.o config.o cps3_debug_harness.o drv.o dynhuff.o inpdipsw.o input_sdl2.o main.o media.o run.o stated.o \
 		stringset.o ips_manager.o support_paths.o scrn.o \
 		\
 		ioapi.o unzip.o conc.o cong.o dat.o gamc.o gami.o image.o \
@@ -353,8 +353,8 @@ LD	= $(CXX)
 AS	= nasm
 
 HOSTCFLAGS = $(incdir)
-CFLAGS = -O2 -fomit-frame-pointer -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
-CXXFLAGS = -O2 -fomit-frame-pointer -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
+CFLAGS = -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
+CXXFLAGS = -Wno-write-strings -DLSB_FIRST -DFASTCALL -DBUILD_M68K -DINCLUDE_LIB_PNGH
 DEF := -DCPUTYPE=$(CPUTYPE) -DUSE_SPEEDHACKS -DBUILD_SDL2
 
 CFLAGS += -U__cdecl -U__fastcall -D__cdecl="" -D__fastcall=""
@@ -366,8 +366,11 @@ endif
 
 ifdef	DEBUG
 	DEF	:= $(DEF) -D_DEBUG
-	CFLAGS += -g
-	CXXFLAGS += -g
+	CFLAGS += -O0 -g3 -fno-omit-frame-pointer
+	CXXFLAGS += -O0 -g3 -fno-omit-frame-pointer
+else
+	CFLAGS += -O2 -fomit-frame-pointer
+	CXXFLAGS += -O2 -fomit-frame-pointer
 endif
 
 ifdef BUILD_X86_ASM
@@ -697,7 +700,7 @@ init:
 ifdef	DEBUG
 	@echo Making debug build...
 else
-	@echo Making normal build...
+	@echo Making release build...
 endif
 	@echo
 	@mkdir -p $(foreach dir, $(alldir),$(objdir)$(dir))

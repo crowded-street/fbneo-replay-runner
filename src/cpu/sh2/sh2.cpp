@@ -3424,6 +3424,41 @@ unsigned int Sh2GetPC(int)
 	return (sh2->delay) ? (sh2->delay & AM) : (sh2->pc & AM);
 }
 
+int Sh2GetRegisters(int n, Sh2RegisterSnapshot* out)
+{
+#if defined FBNEO_DEBUG
+	if (!DebugCPU_SH2Initted) bprintf(PRINT_ERROR, _T("Sh2GetRegisters called without init\n"));
+#endif
+
+	if (Sh2Ext == NULL || out == NULL) {
+		return 1;
+	}
+
+	if (n < 0 || n >= 1) {
+		return 1;
+	}
+
+	const SH2* state = &Sh2Ext[n].sh2;
+
+	out->ppc = state->ppc;
+	out->pc = state->pc;
+	out->pr = state->pr;
+	out->sr = state->sr;
+	out->gbr = state->gbr;
+	out->vbr = state->vbr;
+	out->mach = state->mach;
+	out->macl = state->macl;
+	memcpy(out->r, state->r, sizeof(out->r));
+	out->ea = state->ea;
+	out->delay = state->delay;
+	out->pending_irq = state->pending_irq;
+	out->test_irq = state->test_irq;
+	out->internal_irq_level = state->internal_irq_level;
+	out->internal_irq_vector = state->internal_irq_vector;
+
+	return 0;
+}
+
 void Sh2SetVBR(unsigned int i)
 {
 #if defined FBNEO_DEBUG

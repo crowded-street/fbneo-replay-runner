@@ -1,5 +1,6 @@
 // Run module
 #include "burner.h"
+#include "cps3_debug_harness.h"
 #include "state.h"
 #include "cps3.h"
 #include "sh2_intf.h"
@@ -248,6 +249,15 @@ static void ReplayDumpLoopBoundaryHook(UINT32 currentPc, UINT32 branchTargetPc, 
 	if (!ReplayDumpCps3MainRam(gDumpLoopSequenceNumber++)) {
 		bRunPause = 1;
 	}
+}
+
+static void ReplayExecHook(UINT32 currentPc, UINT32 branchTargetPc, UINT32 delaySlotPc)
+{
+	if (gDumpLoopBoundary.enabled) {
+		ReplayDumpLoopBoundaryHook(currentPc, branchTargetPc, delaySlotPc);
+	}
+
+	Cps3DebugHarnessOnExec(currentPc, branchTargetPc, delaySlotPc);
 }
 
 static INT32 __cdecl ReplayWriteAcb(struct BurnArea* pba)
@@ -778,7 +788,7 @@ int RunInit()
 	gDumpGameIndex = 0;
 	gDumpFrameIndex = 0;
 	gDumpWasInGame = false;
-	Sh2SetExecHandler(gDumpLoopBoundary.enabled ? ReplayDumpLoopBoundaryHook : NULL);
+	Sh2SetExecHandler(ReplayExecHook);
 	if (!ReplayIsEnabled()) {
 		StatedAuto(0);
 	}
