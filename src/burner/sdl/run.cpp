@@ -52,7 +52,6 @@ static bool gReplayLoaded = false;
 static bool gReplayFinished = false;
 static std::vector<UINT8> gReplayInputData;
 static size_t gReplayInputOffset = 0;
-static UINT32 gDumpLoopSequenceNumber = 0;
 static UINT32 gDumpGameIndex = 0;
 static UINT32 gDumpFrameIndex = 0;
 static bool gDumpWasInGame = false;
@@ -68,13 +67,11 @@ static const UINT8* gReplayScanPtr = NULL;
 static INT32 gReplayScanRemaining = 0;
 static bool gReplayScanFailed = false;
 
-struct DumpLoopBoundaryState {
+struct DumpPcTriggerState {
 	bool enabled;
-	bool pendingDelaySlotCompletion;
-	UINT32 loopStartPc;
-	UINT32 loopBranchPc;
+	UINT32 targetPc;
 };
-static DumpLoopBoundaryState gDumpLoopBoundary = { false, false, 0x06094d7a, 0x06094daa };
+static DumpPcTriggerState gDumpPcTrigger = { false, 0x06094d98 };
 static const INT32 kDumpGameStateOffset = 0x15438;
 static const UINT16 kDumpInGameState = 2;
 
@@ -144,7 +141,7 @@ static bool ReplayIsEnabled()
 	return gReplayEnabled;
 }
 
-static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
+static bool ReplayDumpCps3MainRam()
 {
 	if (!ReplayHasDumpRamPath()) {
 		return true;
@@ -158,7 +155,7 @@ static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 	UINT8* ram = cps3GetMainRam();
 	const INT32 ramSize = cps3GetMainRamSize();
 	if (ram == NULL || ramSize != 0x80000) {
-		printf("Failed to access CPS3 Main RAM for frame %u\n", frameNumber);
+		printf("Failed to access CPS3 Main RAM for dump\n");
 		return false;
 	}
 
@@ -217,44 +214,12 @@ static bool ReplayDumpCps3MainRam(UINT32 frameNumber)
 	return true;
 }
 
-static void ReplayDumpLoopBoundaryHook(UINT32 currentPc, UINT32 branchTargetPc, UINT32 delaySlotPc)
-{
-	if (!gDumpLoopBoundary.enabled) {
-		return;
-	}
-
-	if (gDumpLoopBoundary.pendingDelaySlotCompletion) {
-		if (delaySlotPc == 0 && branchTargetPc == gDumpLoopBoundary.loopStartPc) {
-			if (!ReplayDumpCps3MainRam(gDumpLoopSequenceNumber++)) {
-				bRunPause = 1;
-			}
-			gDumpLoopBoundary.pendingDelaySlotCompletion = false;
-		}
-		return;
-	}
-
-	if (currentPc != gDumpLoopBoundary.loopBranchPc) {
-		return;
-	}
-
-	if (branchTargetPc != gDumpLoopBoundary.loopStartPc) {
-		return;
-	}
-
-	if (delaySlotPc != 0) {
-		gDumpLoopBoundary.pendingDelaySlotCompletion = true;
-		return;
-	}
-
-	if (!ReplayDumpCps3MainRam(gDumpLoopSequenceNumber++)) {
-		bRunPause = 1;
-	}
-}
-
 static void ReplayExecHook(UINT32 currentPc, UINT32 branchTargetPc, UINT32 delaySlotPc)
 {
-	if (gDumpLoopBoundary.enabled) {
-		ReplayDumpLoopBoundaryHook(currentPc, branchTargetPc, delaySlotPc);
+	if (gDumpPcTrigger.enabled && currentPc == gDumpPcTrigger.targetPc) {
+		if (!ReplayDumpCps3MainRam()) {
+			bRunPause = 1;
+		}
 	}
 
 	Cps3DebugHarnessOnExec(currentPc, branchTargetPc, delaySlotPc);
@@ -780,11 +745,9 @@ int RunInit()
 	if (!ReplayInit()) {
 		return 1;
 	}
-	gDumpLoopBoundary.enabled =
+	gDumpPcTrigger.enabled =
 		ReplayHasDumpRamPath() &&
 		((BurnDrvGetHardwareCode() & HARDWARE_PUBLIC_MASK) == HARDWARE_CAPCOM_CPS3);
-	gDumpLoopBoundary.pendingDelaySlotCompletion = false;
-	gDumpLoopSequenceNumber = 0;
 	gDumpGameIndex = 0;
 	gDumpFrameIndex = 0;
 	gDumpWasInGame = false;
