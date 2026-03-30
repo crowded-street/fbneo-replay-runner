@@ -10,8 +10,7 @@
 
 # Specify the name of the executable file, without ".exe"
 NAME		= fbneosdl
-OUTDIR		= build
-EXE		= $(OUTDIR)/$(NAME)
+OUTROOT		= build
 INSTALLDIR	= /usr/local/games/fba/
 ROMDIR		= /usr/local/share/roms/
 BINDIR		= /usr/local/bin/
@@ -36,8 +35,10 @@ endif
 
 ifdef	DEBUG
 	NAME := $(NAME)d
+	OUTDIR := $(OUTROOT)/debug
 else
 	NAME := $(NAME)
+	OUTDIR := $(OUTROOT)/release
 endif
 
 ifeq	($(CPUTYPE),i686)
@@ -48,6 +49,8 @@ endif
 ifneq	($(CPUTYPE),i686)
 	NAME := $(NAME)$(CPUTYPE)
 endif
+
+EXE		= $(OUTDIR)/$(NAME)
 
 #
 #	Specify paths/files
@@ -217,8 +220,8 @@ drvobj	+= \
 		\
 		d_sg1000.o
 
-	depobj	+= \
-		bzip.o config.o cps3_debug_harness.o drv.o dynhuff.o inpdipsw.o input_sdl2.o main.o media.o run.o stated.o \
+depobj	+= \
+		bzip.o config.o drv.o dynhuff.o inpdipsw.o input_sdl2.o main.o media.o run.o stated.o \
 		stringset.o ips_manager.o support_paths.o scrn.o \
 		\
 		ioapi.o unzip.o conc.o cong.o dat.o gamc.o gami.o image.o \
@@ -296,6 +299,10 @@ drvobj	+= \
 		snes_65816.o snes_io.o snes_main.o snes_ppu.o snes_spc700.o snes_dsp.o
 
 autobj += $(depobj)
+
+ifdef DEBUG
+autobj += cps3_debug_harness.o
+endif
 
 ifdef	BUILD_X86_ASM
 autobj += burn_sound_a.o eagle_fm.o 2xsaimmx.o hq2x32.o hq3x32.o hq4x32.o superscale.o

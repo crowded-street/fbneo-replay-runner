@@ -1,6 +1,8 @@
 // Run module
 #include "burner.h"
+#ifdef DEBUG
 #include "cps3_debug_harness.h"
+#endif
 #include "state.h"
 #include "cps3.h"
 #include "sh2_intf.h"
@@ -222,7 +224,9 @@ static void ReplayExecHook(UINT32 currentPc, UINT32 branchTargetPc, UINT32 delay
 		}
 	}
 
+#ifdef DEBUG
 	Cps3DebugHarnessOnExec(currentPc, branchTargetPc, delaySlotPc);
+#endif
 }
 
 static INT32 __cdecl ReplayWriteAcb(struct BurnArea* pba)
