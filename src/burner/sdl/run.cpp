@@ -10,6 +10,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <algorithm>
 #include <vector>
 
 static unsigned int nDoFPS = 0;
@@ -57,6 +58,12 @@ static size_t gReplayInputOffset = 0;
 static UINT32 gDumpGameIndex = 0;
 static UINT32 gDumpFrameIndex = 0;
 static bool gDumpWasInGame = false;
+static std::vector<UINT8> gDumpPreviousRam;
+static std::vector<std::vector<UINT8> > gDumpCompressedFrames;
+
+static const UINT32 kScrdHeaderSize = 6;
+static const UINT32 kScrdFrameTableEntrySize = 8;
+static const UINT32 kScrdMaxFrames = 0xffff;
 
 struct ReplayBinding {
 	struct GameInp* pgi;
@@ -116,16 +123,124 @@ static bool ReplayEnsureDirectoryExists(const char* path)
 	return true;
 }
 
-static bool ReplayCreateGameDumpDirectory(UINT32 gameIndex)
+static void ReplayAppendScrdLiteral(
+	std::vector<UINT8>& output, const std::vector<UINT8>& input, size_t start, size_t end)
 {
-	char gamePath[MAX_PATH];
-	snprintf(gamePath, MAX_PATH, "%s/game_%u", gDumpRamPath, gameIndex);
+	while (start < end) {
+		const size_t size = std::min((size_t)128, end - start);
+		output.push_back((UINT8)(size - 1));
+		output.insert(output.end(), input.begin() + start, input.begin() + start + size);
+		start += size;
+	}
+}
 
-	if (!ReplayEnsureDirectoryExists(gamePath)) {
-		printf("Failed to create dump directory: %s\n", gamePath);
+static std::vector<UINT8> ReplayZeroRunEncode(const std::vector<UINT8>& input)
+{
+	std::vector<UINT8> output;
+	size_t literalStart = 0;
+	size_t index = 0;
+
+	while (index < input.size()) {
+		if (input[index] != 0) {
+			index++;
+			continue;
+		}
+
+		size_t runEnd = index;
+		while (runEnd < input.size() && input[runEnd] == 0) {
+			runEnd++;
+		}
+
+		if (runEnd - index < 2) {
+			index = runEnd;
+			continue;
+		}
+
+		ReplayAppendScrdLiteral(output, input, literalStart, index);
+		size_t zeroesLeft = runEnd - index;
+		while (zeroesLeft > 0) {
+			const size_t size = std::min((size_t)128, zeroesLeft);
+			output.push_back((UINT8)(0x80 | (size - 1)));
+			zeroesLeft -= size;
+		}
+
+		literalStart = runEnd;
+		index = runEnd;
+	}
+
+	ReplayAppendScrdLiteral(output, input, literalStart, input.size());
+	return output;
+}
+
+static bool ReplayWriteScrdU16(FILE* fp, UINT16 value)
+{
+	const UINT8 bytes[2] = { (UINT8)value, (UINT8)(value >> 8) };
+	return fwrite(bytes, 1, sizeof(bytes), fp) == sizeof(bytes);
+}
+
+static bool ReplayWriteScrdU32(FILE* fp, UINT32 value)
+{
+	const UINT8 bytes[4] = {
+		(UINT8)value,
+		(UINT8)(value >> 8),
+		(UINT8)(value >> 16),
+		(UINT8)(value >> 24),
+	};
+	return fwrite(bytes, 1, sizeof(bytes), fp) == sizeof(bytes);
+}
+
+static bool ReplayFlushGameDump()
+{
+	if (gDumpCompressedFrames.empty()) {
+		return true;
+	}
+
+	if (!ReplayEnsureDirectoryExists(gDumpRamPath)) {
+		printf("Failed to create dump directory: %s\n", gDumpRamPath);
 		return false;
 	}
 
+	char outPath[MAX_PATH];
+	snprintf(outPath, MAX_PATH, "%s/game_%u.scrd", gDumpRamPath, gDumpGameIndex);
+
+	FILE* fp = fopen(outPath, "wb");
+	if (fp == NULL) {
+		printf("Failed to open SCRD dump path: %s\n", outPath);
+		return false;
+	}
+
+	bool ok =
+		fwrite("SCRD", 1, 4, fp) == 4 &&
+		ReplayWriteScrdU16(fp, (UINT16)gDumpCompressedFrames.size());
+	UINT64 offset = kScrdHeaderSize + (UINT64)gDumpCompressedFrames.size() * kScrdFrameTableEntrySize;
+
+	for (size_t index = 0; ok && index < gDumpCompressedFrames.size(); index++) {
+		const std::vector<UINT8>& frame = gDumpCompressedFrames[index];
+		if (offset > 0xffffffff || frame.size() > 0xffffffff) {
+			printf("SCRD dump is too large: %s\n", outPath);
+			ok = false;
+			break;
+		}
+		ok = ReplayWriteScrdU32(fp, (UINT32)offset) && ReplayWriteScrdU32(fp, (UINT32)frame.size());
+		offset += frame.size();
+	}
+
+	for (size_t index = 0; ok && index < gDumpCompressedFrames.size(); index++) {
+		const std::vector<UINT8>& frame = gDumpCompressedFrames[index];
+		ok = fwrite(frame.data(), 1, frame.size(), fp) == frame.size();
+	}
+
+	if (fclose(fp) != 0) {
+		ok = false;
+	}
+	if (!ok) {
+		printf("Failed to write SCRD dump file: %s\n", outPath);
+		return false;
+	}
+
+	printf("Wrote SCRD dump: %s (%u frames)\n", outPath, (unsigned int)gDumpCompressedFrames.size());
+	gDumpCompressedFrames.clear();
+	gDumpPreviousRam.clear();
 	return true;
 }
 
@@ -147,11 +262,6 @@ static bool ReplayDumpCps3MainRam()
 {
 	if (!ReplayHasDumpRamPath()) {
 		return true;
-	}
-
-	if (!ReplayEnsureDirectoryExists(gDumpRamPath)) {
-		printf("Failed to create dump directory: %s\n", gDumpRamPath);
-		return false;
 	}
 
 	UINT8* ram = cps3GetMainRam();
@@ -179,11 +289,11 @@ static bool ReplayDumpCps3MainRam()
 		ReplayReadBigEndianU16(rawRam.data(), rawRam.size(), (size_t)kDumpGameStateOffset) == kDumpInGameState;
 
 	if (gDumpWasInGame && !isInGame) {
-		gDumpGameIndex++;
-		gDumpFrameIndex = 0;
-		if (!ReplayCreateGameDumpDirectory(gDumpGameIndex)) {
+		if (!ReplayFlushGameDump()) {
 			return false;
 		}
+		gDumpGameIndex++;
+		gDumpFrameIndex = 0;
 	}
 	gDumpWasInGame = isInGame;
 
@@ -191,27 +301,24 @@ static bool ReplayDumpCps3MainRam()
 		return true;
 	}
 
-	if (!ReplayCreateGameDumpDirectory(gDumpGameIndex)) {
+	if (gDumpCompressedFrames.size() >= kScrdMaxFrames) {
+		printf("Too many frames for SCRD dump game_%u\n", gDumpGameIndex);
 		return false;
 	}
 
-	char outPath[MAX_PATH];
-	snprintf(outPath, MAX_PATH, "%s/game_%u/frame_%08u.ram", gDumpRamPath, gDumpGameIndex, gDumpFrameIndex);
-
-	FILE* fp = fopen(outPath, "wb");
-	if (fp == NULL) {
-		printf("Failed to open RAM dump path: %s\n", outPath);
-		return false;
+	if (!gDumpPreviousRam.empty()) {
+		for (size_t index = 0; index < rawRam.size(); index++) {
+			rawRam[index] ^= gDumpPreviousRam[index];
+		}
+		gDumpCompressedFrames.push_back(ReplayZeroRunEncode(rawRam));
+		for (size_t index = 0; index < rawRam.size(); index++) {
+			rawRam[index] ^= gDumpPreviousRam[index];
+		}
+	} else {
+		gDumpCompressedFrames.push_back(ReplayZeroRunEncode(rawRam));
 	}
 
-	const bool ok = fwrite(rawRam.data(), 1, rawRam.size(), fp) == rawRam.size();
-	fclose(fp);
-
-	if (!ok) {
-		printf("Failed to write RAM dump file: %s\n", outPath);
-		return false;
-	}
-
+	gDumpPreviousRam.swap(rawRam);
 	gDumpFrameIndex++;
 	return true;
 }
@@ -755,6 +862,8 @@ int RunInit()
 	gDumpGameIndex = 0;
 	gDumpFrameIndex = 0;
 	gDumpWasInGame = false;
+	gDumpPreviousRam.clear();
+	gDumpCompressedFrames.clear();
 	Sh2SetExecHandler(ReplayExecHook);
 	if (!ReplayIsEnabled()) {
 		StatedAuto(0);
@@ -766,6 +875,9 @@ int RunExit()
 {
 	nNormalLast = 0;
 	Sh2SetExecHandler(NULL);
+	if (ReplayHasDumpRamPath() && !ReplayFlushGameDump()) {
+		return 1;
+	}
 	if (!ReplayIsEnabled()) {
 		StatedAuto(1);
 	}
