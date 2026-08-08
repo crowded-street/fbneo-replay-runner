@@ -142,7 +142,7 @@ lib	= -static -lstdc++ -lpng -lmingw32 -Wl,-Bdynamic -lSDL -lz -lopengl32 -lglu3
 else ifeq ($(shell uname -s),Darwin)
 lib	= $(shell pkg-config --libs sdl2 2>/dev/null) -lz -framework OpenGL
 else
-lib	= -lstdc++ -lSDL -lGL -lGLU -lz
+lib	= -lstdc++ $(shell pkg-config --libs sdl2 2>/dev/null) -lGL -lGLU -lz
 endif
 
 
@@ -310,6 +310,10 @@ endif
  
 autdep	= $(depobj:.o=.d)
 
+ifdef DEBUG
+autdep += cps3_debug_harness.d
+endif
+
 #app_windres.rc = $(srcdir)dep/generated/app_windres.rc
 #license.rc = $(srcdir)dep/generated/license.rc
 driverlist.h = $(srcdir)dep/generated/driverlist.h
@@ -397,17 +401,19 @@ endif
 
 CFLAGS += $(DEF) $(incdir)
 CXXFLAGS += $(DEF) $(incdir)
-ifeq ($(shell uname -s),Darwin)
+ifneq ($(OS),Windows_NT)
 CFLAGS += $(shell pkg-config --cflags sdl2 2>/dev/null)
 CXXFLAGS += $(shell pkg-config --cflags sdl2 2>/dev/null)
-CFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
-CXXFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
 CFLAGS += -DBOOL=int -DTRUE=1 -DFALSE=0
 CXXFLAGS += -DBOOL=int -DTRUE=1 -DFALSE=0
-CFLAGS += -DPNG_ARM_NEON=0
-CXXFLAGS += -DPNG_ARM_NEON=0
-CFLAGS += -DPNG_ARM_NEON_OPT=0
-CXXFLAGS += -DPNG_ARM_NEON_OPT=0
+ifneq ($(filter arm% aarch64,$(shell uname -m)),)
+CFLAGS += -DPNG_ARM_NEON=0 -DPNG_ARM_NEON_OPT=0
+CXXFLAGS += -DPNG_ARM_NEON=0 -DPNG_ARM_NEON_OPT=0
+endif
+endif
+ifeq ($(shell uname -s),Darwin)
+CFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
+CXXFLAGS += -Dfopen64=fopen -Dftello64=ftello -Dfseeko64=fseeko
 endif
 ifndef DEBUG
 LDFLAGS += -s
